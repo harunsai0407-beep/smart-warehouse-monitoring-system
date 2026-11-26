@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LIVE ARRIVAL INDEX – SMART WAREHOUSE MONITOR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <span class="brand">LIVE ARRIVAL INDEX</span>
+      <nav class="topnav" aria-label="Primary navigation">
+        <a href="#overview">Overview</a>
+        <a href="#coverage">Coverage</a>
+        <a href="#ledger">Intervals</a>
+        <a href="#scanner">Scanner</a>
+      </nav>
+      <button type="button" id="topDemoBtn" class="btn btn-primary">Run Demo</button>
+    </div>
+  </header>
+
+  <main class="container page-main">
+    <section class="page-intro">
+      <h1>Live Arrival Index – Smart Warehouse Monitor</h1>
+      <p>
+        Incremental disjoint interval tracking via <code>SortedDict</code> with duplicate detection,
+        bridge merging, and bounded missing-range queries without allocating arrays up to 1,000,000,000.
+      </p>
+    </section>
+
+    <div id="errorBanner" class="error-banner hidden" role="alert"></div>
+
+    <!-- Statistics Strip -->
+    <section id="overview" class="stats-grid" aria-label="Warehouse statistics">
+      <div class="stat-cell">
+        <span class="stat-label">Unique Packages</span>
+        <div class="stat-value-row">
+          <strong id="statUnique" class="mono">0</strong>
+          <span class="stat-sub mono">/ 50,000</span>
+        </div>
+      </div>
+      <div class="stat-cell">
+        <span class="stat-label">Sorted Intervals</span>
+        <div class="stat-value-row">
+          <strong id="statIntervals" class="mono accent-green">0</strong>
+          <span class="stat-sub">disjoint runs</span>
+        </div>
+      </div>
+      <div class="stat-cell">
+        <span class="stat-label">Duplicates Ignored</span>
+        <div class="stat-value-row">
+          <strong id="statDuplicates" class="mono">0</strong>
+          <span id="statScans" class="stat-sub mono">0 scans</span>
+        </div>
+      </div>
+      <div class="stat-cell">
+        <span class="stat-label">Bridge Merges</span>
+        <div class="stat-value-row">
+          <strong id="statMerges" class="mono accent-green">0</strong>
+          <span class="stat-sub">adjacent joins</span>
+        </div>
+      </div>
+      <div class="stat-cell">
+        <span class="stat-label">Compression Ratio</span>
+        <div class="stat-value-row">
+          <strong id="statCompression" class="mono">0.0x</strong>
+          <span class="stat-sub">IDs per interval</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="workbench-grid">
+      <!-- Left Main Stage -->
+      <div id="coverage" class="stage-col">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Live Number-Line Coverage</h2>
+              <p id="numberLineMeta" class="mono muted-line">Window [95 .. 130]</p>
+            </div>
+            <div class="segmented">
+              <button type="button" id="modeQueryBtn" class="seg-btn active">Query Bounds [L, R]</button>
+              <button type="button" id="modeActiveBtn" class="seg-btn">Active Span</button>
+            </div>
+          </div>
+
+          <div class="legend-row">
+            <span class="legend-item"><i class="swatch swatch-green"></i>Arrived Interval (Present)</span>
+            <span class="legend-item"><i class="swatch swatch-amber"></i>Missing Gap (Click to Scan)</span>
+            <span id="totalStoredLabel" class="mono muted-line ml-auto">Stored intervals: 0</span>
+          </div>
+
+          <svg id="numberLineSvg" viewBox="0 0 1000 76" class="number-line-svg" role="img" aria-label="Interval number line"></svg>
+
+          <div id="hoverInspector" class="inspector-bar">
+            Hover any green interval or amber gap to inspect exact bounds. Click any missing gap to scan its starting ID.
+          </div>
+        </section>
+
+        <!-- Tabbed Ledger -->
+        <section id="ledger" class="panel no-pad">
+          <div class="ledger-toolbar">
+            <div class="segmented">
+              <button type="button" id="tabIntervals" class="seg-btn active">Live Sorted Intervals</button>
+              <button type="button" id="tabMissing" class="seg-btn">Missing Ranges</button>
+              <button type="button" id="tabHistory" class="seg-btn">Arrival History</button>
+            </div>
+            <span id="activeBoundsLabel" class="mono muted-line">Active Range: Empty</span>
+          </div>
+
+          <div id="panelIntervals">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Interval [Start, End]</th>
+                    <th class="right">Consecutive IDs</th>
+                    <th class="right">Gap to Next</th>
+                    <th class="right">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="intervalsBody"></tbody>
+              </table>
+            </div>
+            <div class="pagination-bar">
+              <span id="intervalsPageInfo" class="mono">0 intervals</span>
+              <div class="page-actions">
+                <button type="button" id="prevPageBtn" class="btn btn-ghost">Prev</button>
+                <button type="button" id="nextPageBtn" class="btn btn-ghost">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="panelMissing" class="hidden">
+            <div class="missing-summary-bar">
+              <div id="missingStatsText" class="mono">Missing IDs: 0</div>
+              <div class="page-actions">
+                <button type="button" id="copyMissingBtn" class="btn btn-ghost">Copy</button>
+                <button type="button" id="exportMissingBtn" class="btn btn-ghost">Export JSON</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Missing Range</th>
+                    <th class="right">Missing Count</th>
+                    <th class="right">Fill Gap</th>
+                  </tr>
+                </thead>
+                <tbody id="missingBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="panelHistory" class="hidden">
+            <div class="table-wrap max-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Package ID</th>
+                    <th>Classification</th>
+                    <th>Resulting Interval</th>
+                    <th class="right">Delta</th>
+                  </tr>
+                </thead>
+                <tbody id="historyBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Right Control Deck -->
+      <aside id="scanner" class="control-col">
+        <section class="panel">
+          <div class="panel-header-sm">
+            <h2>Package ID Entry</h2>
+            <span class="mono muted-line">0 .. 1,000,000,000</span>
+          </div>
+          <form id="singleScanForm" class="inline-form">
+            <input type="text" id="singleIdInput" placeholder="Enter ID (e.g. 103)" aria-label="Package ID" />
+            <button type="submit" class="btn btn-primary">Scan ID</button>
+          </form>
+
+          <div class="divider"></div>
+          <p class="field-label">Quick Operations</p>
+          <div class="quick-grid">
+            <button type="button" id="quickExtendBtn" class="btn btn-secondary">Extend</button>
+            <button type="button" id="quickBridgeBtn" class="btn btn-secondary accent-green">Bridge</button>
+            <button type="button" id="quickDuplicateBtn" class="btn btn-secondary accent-amber">Duplicate</button>
+            <button type="button" id="quickRandomBtn" class="btn btn-secondary">Random 1B ID</button>
+          </div>
+          <div class="row-actions">
+            <button type="button" id="toggleBatchBtn" class="btn btn-secondary flex-1">Batch Paste IDs</button>
+            <button type="button" id="resetBtn" class="btn btn-danger">Reset</button>
+          </div>
+
+          <form id="batchForm" class="batch-box hidden">
+            <label for="batchInput" class="field-label">Batch IDs (comma, space, or newline separated)</label>
+            <textarea id="batchInput" rows="3" placeholder="100, 101, 102, 104, 103, 999999999"></textarea>
+            <button type="submit" class="btn btn-primary full-width">Submit Batch</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header-sm">
+            <h2>Bounded Missing-Range Finder</h2>
+            <span class="mono accent-green">GET /api/missing</span>
+          </div>
+          <form id="missingQueryForm" class="stack-form">
+            <div class="bounds-grid">
+              <div>
+                <label for="queryLInput" class="field-label">Lower Bound L</label>
+                <input type="text" id="queryLInput" value="95" />
+              </div>
+              <div>
+                <label for="queryRInput" class="field-label">Upper Bound R</label>
+                <input type="text" id="queryRInput" value="130" />
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary full-width">Find Missing Ranges in [L, R]</button>
+          </form>
+          <div class="preset-row">
+            <button type="button" id="presetSmallBtn" class="btn btn-ghost mono">[95, 130]</button>
+            <button type="button" id="presetActiveBtn" class="btn btn-ghost mono">[Active Min, Max]</button>
+            <button type="button" id="presetFullBtn" class="btn btn-ghost mono">[0, 1,000,000,000]</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header-sm">
+            <h2>Demonstration Mode</h2>
+            <span class="mono accent-green">POST /api/demo</span>
+          </div>
+          <div class="stack-buttons">
+            <button type="button" id="demoGuidedBtn" class="btn btn-secondary text-left">Guided Demo (Merges + Duplicates + 1B ID)</button>
+            <button type="button" id="demoBridgeBtn" class="btn btn-secondary accent-green text-left">Trigger Bridge Merge Showcase</button>
+            <div class="two-col-buttons">
+              <button type="button" id="demo5kBtn" class="btn btn-secondary">Load 5,000 IDs</button>
+              <button type="button" id="demo50kBtn" class="btn btn-secondary">Load 50,000 IDs</button>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+          <h3 class="field-label">Latest Engine Decision</h3>
+          <div id="latestDecision" class="decision-box">Awaiting arrival scan.</div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <span>LIVE ARRIVAL INDEX – SMART WAREHOUSE MONITOR</span>
+      <span class="mono">SortedDict Interval Engine · Flask REST API</span>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

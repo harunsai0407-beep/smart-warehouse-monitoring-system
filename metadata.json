@@ -1,0 +1,6 @@
+{
+  "name": "PackRange — Live Arrival Index",
+  "description": "Incremental disjoint interval tracker and bounded missing-range query engine for warehouse package IDs up to 1 billion.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
